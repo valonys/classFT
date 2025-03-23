@@ -85,20 +85,20 @@ def process_file(uploaded_file, _cache_key):
         
         elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv"]:
             df = pd.read_excel(uploaded_file) if uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else pd.read_csv(uploaded_file)
-            required_cols = ["Scope", "Functional Location"]
-            optional_cols = ["Unit name"]  # New column added
-            available_cols = [col for col in required_cols + optional_cols if col in df.columns]
+            required_cols = ["Scope", "Functional Location", "Unit name"]  # Unit name now required
             
-            if not any(col in required_cols for col in available_cols):
-                st.warning("No 'Scope' or 'Functional Location' columns found. Treating as plain text.")
-                return {"type": "text", "content": df.to_string()}
+            # Check if all required columns are present
+            missing_cols = [col for col in required_cols if col not in df.columns]
+            if missing_cols:
+                st.error(f"Missing required columns: {', '.join(missing_cols)}. Please upload a file with 'Scope', 'Functional Location', and 'Unit name'.")
+                return None
             
-            # Pre-process and concatenate Scope and Functional Location (and Unit name if present)
-            df = df.dropna(subset=[col for col in available_cols if col in required_cols])
-            df["input_text"] = df[[col for col in available_cols if col in required_cols]].apply(
+            # Pre-process and concatenate Scope, Functional Location, and Unit name
+            df = df.dropna(subset=required_cols)
+            df["input_text"] = df[required_cols].apply(
                 lambda row: " ".join([re.sub(r'\s+', ' ', str(val).lower().strip()) for val in row]), axis=1
             )
-            return {"type": "table", "content": df[["input_text"] + available_cols]}
+            return {"type": "table", "content": df[["input_text"] + required_cols]}
         
     except Exception as e:
         st.error(f"📄 Error processing file: {str(e)}")
@@ -182,7 +182,7 @@ if uploaded_file and not st.session_state.file_processed:
         st.session_state.file_data = file_data
         st.session_state.file_processed = True
         if file_data["type"] == "table":
-            st.write("File uploaded with Scope and Functional Location data. Please provide an instruction.")
+            st.write("File uploaded with Scope, Functional Location, and Unit name data. Please provide an instruction.")
         else:
             st.write("File uploaded as text context. Please provide an instruction.")
 
@@ -211,9 +211,7 @@ if prompt := st.chat_input("Ask your inspection question..."):
                     file_data = st.session_state.file_data
                     if file_data["type"] == "table":
                         predictions = classify_instruction(prompt, file_data["content"], model, tokenizer)
-                        # Include "Unit name" if present, otherwise exclude it
-                        available_cols = [col for col in ["Scope", "Functional Location", "Unit name"] if col in file_data["content"].columns]
-                        result_df = file_data["content"][available_cols].copy()
+                        result_df = file_data["content"][["Scope", "Functional Location", "Unit name"]].copy()
                         result_df["Predicted Class"] = predictions
                         st.write("Predicted Item Classes:")
                         st.table(result_df)
