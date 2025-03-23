@@ -1,1 +1,10 @@
-
+streamlit
+transformers
+torch
+pandas
+PyPDF2
+openpyxl
+accelerate
+xformers
+huggingface_hub
+peft
