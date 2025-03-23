@@ -85,16 +85,17 @@ def process_file(uploaded_file, _cache_key):
         
         elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv"]:
             df = pd.read_excel(uploaded_file) if uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else pd.read_csv(uploaded_file)
-            required_cols = ["Scope", "Functional Location", "Unit Name"]
-            available_cols = [col for col in required_cols if col in df.columns]
+            required_cols = ["Scope", "Functional Location"]
+            optional_cols = ["Unit name"]  # New column added
+            available_cols = [col for col in required_cols + optional_cols if col in df.columns]
             
-            if not available_cols:
+            if not any(col in required_cols for col in available_cols):
                 st.warning("No 'Scope' or 'Functional Location' columns found. Treating as plain text.")
                 return {"type": "text", "content": df.to_string()}
             
-            # Pre-process and concatenate Scope and Functional Location
-            df = df.dropna(subset=available_cols)
-            df["input_text"] = df[available_cols].apply(
+            # Pre-process and concatenate Scope and Functional Location (and Unit name if present)
+            df = df.dropna(subset=[col for col in available_cols if col in required_cols])
+            df["input_text"] = df[[col for col in available_cols if col in required_cols]].apply(
                 lambda row: " ".join([re.sub(r'\s+', ' ', str(val).lower().strip()) for val in row]), axis=1
             )
             return {"type": "table", "content": df[["input_text"] + available_cols]}
@@ -103,7 +104,7 @@ def process_file(uploaded_file, _cache_key):
         st.error(f"📄 Error processing file: {str(e)}")
         return None
 
-# Model loading function (cached, but only loaded once)
+# Model loading function
 @st.cache_resource
 def load_model(hf_token):
     if not TRANSFORMERS_AVAILABLE:
@@ -169,13 +170,12 @@ tokenizer = st.session_state.get("tokenizer")
 # Check for new file upload and clear cache
 if uploaded_file and uploaded_file != st.session_state.last_uploaded_file:
     st.cache_data.clear()  # Clear all cached data
-    st.session_state.file_processed = False  # Reset processing state
-    st.session_state.file_data = None  # Clear previous file data
-    st.session_state.last_uploaded_file = uploaded_file  # Update last uploaded file
+    st.session_state.file_processed = False
+    st.session_state.file_data = None
+    st.session_state.last_uploaded_file = uploaded_file
 
 # Process uploaded file once
 if uploaded_file and not st.session_state.file_processed:
-    # Use file name and size as a cache key to ensure uniqueness
     cache_key = f"{uploaded_file.name}_{uploaded_file.size}"
     file_data = process_file(uploaded_file, cache_key)
     if file_data:
@@ -211,7 +211,9 @@ if prompt := st.chat_input("Ask your inspection question..."):
                     file_data = st.session_state.file_data
                     if file_data["type"] == "table":
                         predictions = classify_instruction(prompt, file_data["content"], model, tokenizer)
-                        result_df = file_data["content"][["Scope", "Functional Location"]].copy()
+                        # Include "Unit name" if present, otherwise exclude it
+                        available_cols = [col for col in ["Scope", "Functional Location", "Unit name"] if col in file_data["content"].columns]
+                        result_df = file_data["content"][available_cols].copy()
                         result_df["Predicted Class"] = predictions
                         st.write("Predicted Item Classes:")
                         st.table(result_df)
