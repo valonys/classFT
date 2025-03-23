@@ -85,7 +85,7 @@ def process_file(uploaded_file, _cache_key):
         
         elif uploaded_file.type in ["application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/csv"]:
             df = pd.read_excel(uploaded_file) if uploaded_file.type == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" else pd.read_csv(uploaded_file)
-            required_cols = ["Scope", "Functional Location"]
+            required_cols = ["Scope", "Functional Location", "Unit Name"]
             available_cols = [col for col in required_cols if col in df.columns]
             
             if not available_cols:
